@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Anime Öneri Motoru</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-900 text-white min-h-screen p-4 flex flex-col items-center">
+
+    <div class="w-full max-w-lg bg-gray-800 rounded-lg p-6 shadow-xl mt-4">
+        <h1 class="text-xl font-bold text-center mb-6 text-indigo-400">🤖 AI Anime Öneri Motoru</h1>
+
+        <label class="block text-sm font-semibold mb-2 text-gray-300">Kesinlikle Olsun (En Fazla 3 Tür):</label>
+        <div id="genres-container" class="flex flex-wrap gap-2 mb-4">
+        </div>
+
+        <label class="block text-sm font-semibold mb-2 text-gray-300">Nasıl bir anime istiyorsun?</label>
+        <textarea id="user-text" class="w-full p-3 bg-gray-700 rounded text-white border border-gray-600 focus:outline-none focus:border-indigo-500 h-24 text-sm" placeholder="Örn: Gotik temalı, vampirlerin olduğu bir aksiyon..."></textarea>
+
+        <button id="search-btn" onclick="animeAra()" class="w-full mt-4 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-4 rounded transition duration-200">
+            Öneri Bul
+        </button>
+
+        <div id="status-msg" class="text-center text-xs mt-2 text-red-400 font-semibold hidden"></div>
+    </div>
+
+    <div id="results-container" class="w-full max-w-lg mt-6 hidden">
+        <div class="flex justify-between items-center mb-4">
+            <h2 class="text-lg font-bold text-indigo-300">Sana Uygun Animeler:</h2>
+            <button id="reroll-btn" onclick="sonrakiBesliyiGoster()" class="bg-emerald-600 hover:bg-emerald-700 text-xs text-white font-bold py-2 px-3 rounded">
+                Yenile (Reroll)
+            </button>
+        </div>
+        <div id="anime-list" class="space-y-4">
+        </div>
+    </div>
+
+    <script>
+        const API_URL = "http://127.0.0.1:8000"; 
+        const SESSION_ID = "sess_" + Math.random().toString(36).substr(2, 9);
+        
+        const ANILIST_TURLERI = ["Action", "Adventure", "Comedy", "Drama", "Fantasy", "Horror", "Mystery", "Psychological", "Romance", "Sci-Fi", "Thriller"];
+        let secilenTurler = [];
+        let globalHavuz = [];
+        let mevcutIndeks = 0;
+
+        const container = document.getElementById("genres-container");
+        ANILIST_TURLERI.forEach(tur => {
+            const btn = document.createElement("button");
+            btn.innerText = tur;
+            btn.className = "bg-gray-700 text-xs px-3 py-1.5 rounded-full hover:bg-gray-600 transition";
+            btn.onclick = () => turSecimi(tur, btn);
+            container.appendChild(btn);
+        });
+
+        function turSecimi(tur, btn) {
+            if (secilenTurler.includes(tur)) {
+                secilenTurler = secilenTurler.filter(t => t !== tur);
+                btn.classList.remove("bg-indigo-500", "hover:bg-indigo-400");
+                btn.classList.add("bg-gray-700");
+            } else {
+                if (secilenTurler.length >= 3) {
+                    alert("En fazla 3 kesin tür seçebilirsiniz.");
+                    return;
+                }
+                secilenTurler.push(tur);
+                btn.classList.remove("bg-gray-700");
+                btn.classList.add("bg-indigo-500", "hover:bg-indigo-400");
+            }
+        }
+
+        async function animeAra() {
+            const metin = document.getElementById("user-text").value;
+            const statusMsg = document.getElementById("status-msg");
+            
+            if (metin.length < 3) return alert("Lütfen daha uzun bir açıklama yazın.");
+
+            statusMsg.innerText = "Yapay zeka analiz ediyor ve listeliyor...";
+            statusMsg.classList.remove("hidden", "text-red-400");
+            statusMsg.classList.add("text-indigo-400");
+
+            try {
+                const response = await fetch(`${API_URL}/tam-otomatik-oner`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        kullanici_metni: metin,
+                        session_id: SESSION_ID,
+                        kesin_turler: secilenTurler,
+                        benzer_anime_türleri: []
+                    })
+                });
+
+                const veri = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(veri.detail || "Bir hata oluştu.");
+                }
+
+                globalHavuz = veri.reroll_havuzu_toplam_20_anime;
+                console.log("Gelen Veri Kontrolü:", globalHavuz);
+                mevcutIndeks = 0;
+                statusMsg.classList.add("hidden");
+                document.getElementById("results-container").classList.remove("hidden");
+                
+                ekranaBesliBas();
+
+            } catch (error) {
+                statusMsg.innerText = error.message;
+                statusMsg.classList.remove("hidden", "text-indigo-400");
+                statusMsg.classList.add("text-red-400");
+            }
+        }
+
+        function ekranaBesliBas() {
+            const listeDiv = document.getElementById("anime-list");
+            listeDiv.innerHTML = "";
+            
+            const gosterilecekler = globalHavuz.slice(mevcutIndeks, mevcutIndeks + 5);
+            
+            if (gosterilecekler.length === 0) {
+                alert("Havuzdaki tüm animeleri tükettiniz. Yeni arama yapın.");
+                document.getElementById("reroll-btn").classList.add("hidden");
+                return;
+            }
+
+            gosterilecekler.forEach(anime => {
+                const ad = anime.title.english || anime.title.romaji;
+                const resimUrl = anime.resim || "https://via.placeholder.com/100x140?text=Resim+Yok";
+                
+                const kart = document.createElement("div");
+                kart.className = "bg-gray-800 p-4 rounded-lg border border-gray-700 shadow-md flex gap-4";
+                
+                kart.innerHTML = `
+                    <img src="${resimUrl}" onerror="this.src='https://via.placeholder.com/100x140?text=Resim+Yok'" alt="${ad}" class="w-24 h-36 object-cover rounded border border-gray-600 shadow-sm flex-shrink-0">
+                    <div class="flex-1 flex flex-col justify-between">
+                        <div>
+                            <div class="flex justify-between items-start mb-2">
+                                <h3 class="font-bold text-sm text-white line-clamp-2 pr-2">${ad}</h3>
+                                <span class="bg-indigo-900 text-indigo-200 text-xs font-bold px-2 py-0.5 rounded flex-shrink-0">★ ${anime.averageScore}</span>
+                            </div>
+                            <p class="text-[11px] text-gray-400 line-clamp-3 mb-2 leading-relaxed">${anime.description}</p>
+                        </div>
+                        <div class="flex gap-2 mt-auto">
+                            <button onclick="reaksiyonGonder('${ad}', 'begendim', this)" class="bg-gray-700 hover:bg-gray-600 text-[10px] px-2 py-1.5 rounded transition">👍 Beğendim</button>
+                            <button onclick="reaksiyonGonder('${ad}', 'izledim_gec', this)" class="bg-gray-700 hover:bg-gray-600 text-[10px] px-2 py-1.5 rounded transition">⏭️ İzledim / Geç</button>
+                        </div>
+                    </div>
+                `;
+                listeDiv.appendChild(kart);
+            });
+        }
+
+        function sonrakiBesliyiGoster() {
+            mevcutIndeks += 5;
+            ekranaBesliBas();
+        }
+
+        async function reaksiyonGonder(animeAdi, durum, buton) {
+            buton.disabled = true;
+            buton.classList.add("opacity-50", "bg-indigo-600");
+            try {
+                await fetch(`${API_URL}/reaksiyon-kaydet`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ session_id: SESSION_ID, anime_adi: animeAdi, durum: durum })
+                });
+            } catch (e) { console.error(e); }
+        }
+    </script>
+</body>
+</html>
